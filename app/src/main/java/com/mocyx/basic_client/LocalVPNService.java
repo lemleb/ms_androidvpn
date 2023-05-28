@@ -146,6 +146,7 @@ public class LocalVPNService extends VpnService {
                     try {
                         ByteBuffer bufferFromNetwork = networkToDeviceQueue.take();
                         bufferFromNetwork.flip();
+                        //logPayloadRecvdTCP(bufferFromNetwork);
                         while (bufferFromNetwork.hasRemaining()) {
                             int w = vpnOutput.write(bufferFromNetwork);
                             if (w > 0) {
@@ -189,7 +190,7 @@ public class LocalVPNService extends VpnService {
                             }
                             deviceToNetworkUDPQueue.offer(packet);
                         } else if (packet.isTCP()) {
-                            logPayloadRecvdTCP(packet);
+                            logPayloadSentTCP(packet);
                             deviceToNetworkTCPQueue.offer(packet);
                         } else {
                             Log.w(TAG, String.format("Unknown packet protocol type %d", packet.ip4Header.protocolNum));
@@ -209,11 +210,26 @@ public class LocalVPNService extends VpnService {
             }
         }
 
-        private static void logPayloadRecvdTCP(Packet packet) {
+        private static void logPayloadSentTCP(Packet packet) {
             try{
                 Log.i("VPN_TCP", "Sent TCP packet with id " + packet.packId + " from port: " + packet.tcpHeader.sourcePort
                         + " to address/port: " + packet.ip4Header.destinationAddress + "/" + packet.tcpHeader.destinationPort
                         + ((packet.tcpHeader.destinationPort == 443) ? " (https) " : "") + " with payload: ");
+            }
+            catch (Exception e)
+            {
+
+            }
+        }
+
+
+        private static void logPayloadRecvdTCP(ByteBuffer bufferFromNetwork) {
+
+            try{
+                Packet packet = new Packet(bufferFromNetwork);
+                Log.i("VPN_TCP", "Recieved TCP packet with id " + packet.packId + " to port: " + packet.tcpHeader.destinationPort
+                        + " from address/port: " + packet.ip4Header.sourceAddress + "/" + packet.tcpHeader.sourcePort
+                        + ((packet.tcpHeader.sourcePort == 443) ? " (https) " : "") + " with payload: ");
             }
             catch (Exception e)
             {

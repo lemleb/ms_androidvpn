@@ -95,7 +95,7 @@ public class BioTcpHandler implements Runnable {
 
         packet.updateTCPBuffer(byteBuffer, flag, tunnel.mySequenceNum, tunnel.myAcknowledgementNum, dataLen);
         byteBuffer.position(HEADER_SIZE + dataLen);
-        logPayloadRecvdTCP(packet, data);
+        //logPayloadSentTCP(packet, data);
         tunnel.networkToDeviceQueue.offer(byteBuffer);
 
         if ((flag & (byte) TCPHeader.SYN) != 0) {
@@ -109,11 +109,11 @@ public class BioTcpHandler implements Runnable {
         }
     }
 
-    private static void logPayloadRecvdTCP(Packet packet, byte[] data) {
+    private static void logPayloadSentTCP(Packet packet, byte[] data) {
         try{
             String payloadString = new String(data, "UTF-8").substring(8);
-            Log.i("VPN_TCP", "Recieved TCP packet with id " + packet.packId + " to port: " + packet.tcpHeader.destinationPort
-                    + " from address/port: " + packet.ip4Header.sourceAddress + "/" + packet.tcpHeader.sourcePort + " with payload: " + payloadString);
+            Log.i("VPN_TCP", "Sent TCP packet with id " + packet.packId + " from port: " + packet.tcpHeader.sourcePort
+                    + " to address/port: " + packet.ip4Header.destinationAddress + "/" + packet.tcpHeader.destinationPort + " with payload: " + payloadString);
         }
         catch (UnsupportedEncodingException e)
         {
@@ -470,7 +470,6 @@ public class BioTcpHandler implements Runnable {
                 String ipAndPort = destinationAddress.getHostAddress() + ":" +
                         destinationPort + ":" + sourcePort;
                 //
-                logPayloadSentTCP(currentPacket);
                 while (true) {
                     String s = this.tunnelCloseMsgQueue.poll();
                     if (s == null) {
@@ -495,17 +494,4 @@ public class BioTcpHandler implements Runnable {
         }
     }
 
-    private static void logPayloadSentTCP(Packet packet) {
-        try{
-            byte[] data = new byte[packet.backingBuffer.remaining()];
-            packet.backingBuffer.get(data);
-            String payloadString = new String(data, "UTF-8");
-            Log.i("VPN_TCP", "Sent UDP packet with id " + packet.packId + " from port: " + packet.udpHeader.sourcePort
-                    + " to address/port: " + packet.ip4Header.destinationAddress + "/" + packet.udpHeader.destinationPort + " with payload: " + payloadString);
-        }
-        catch (UnsupportedEncodingException e)
-        {
-
-        }
-    }
 }
