@@ -12,6 +12,7 @@ import com.mocyx.basic_client.util.ByteBufferPool;
 import com.mocyx.basic_client.util.ObjAttrUtil;
 
 import java.io.IOException;
+import java.io.UnsupportedEncodingException;
 import java.net.InetAddress;
 import java.net.InetSocketAddress;
 import java.nio.ByteBuffer;
@@ -238,6 +239,7 @@ public class NioSingleThreadTcpHandler implements Runnable {
         }
         return true;
     }
+
 
 
     private void closeUpStream(TcpPipe pipe) throws Exception {

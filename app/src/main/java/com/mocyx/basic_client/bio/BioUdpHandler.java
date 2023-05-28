@@ -54,7 +54,6 @@ public class BioUdpHandler implements Runnable {
                 dataLen = data.length;
             }
             Packet packet = IpUtil.buildUdpPacket(tunnel.remote, tunnel.local, ipId.addAndGet(1));
-
             ByteBuffer byteBuffer = ByteBufferPool.acquire();
             //
             byteBuffer.position(HEADER_SIZE);
@@ -66,6 +65,8 @@ public class BioUdpHandler implements Runnable {
             }
             packet.updateUDPBuffer(byteBuffer, dataLen);
             byteBuffer.position(HEADER_SIZE + dataLen);
+            logPayloadRecvdUDP(packet, data);
+            //Log.i("VPN", "Sent UDP packet to port: " + packet.ip4Header.protocolNum);
             this.networkToDeviceQueue.offer(byteBuffer);
         }
 
@@ -113,7 +114,6 @@ public class BioUdpHandler implements Runnable {
                                 receiveBuffer.flip();
                                 byte[] data = new byte[receiveBuffer.remaining()];
                                 receiveBuffer.get(data);
-                                //logPayload(data);
                                 sendUdpPack((UdpTunnel) key.attachment(), (InetSocketAddress) inputChannel.getLocalAddress(), data);
                             } catch (IOException e) {
                                 Log.e(TAG, "error", e);
@@ -134,11 +134,11 @@ public class BioUdpHandler implements Runnable {
     }
 
 
-    private static void logPayload(byte[] payload) {
+    private static void logPayloadRecvdUDP(Packet packet, byte[] data) {
         try{
-
-            String payloadString = new String(payload, "UTF-8");
-            Log.d("PAYLOAD", "Payload: " + payloadString);
+            String payloadString = new String(data, "UTF-8").substring(8);
+            Log.i("VPN_UDP", "Recieved UDP packet with id " + packet.packId + " to port: " + packet.udpHeader.destinationPort
+                    + " from address/port: " + packet.ip4Header.sourceAddress + "/" + packet.udpHeader.sourcePort + " with payload: " + payloadString);
         }
         catch (UnsupportedEncodingException e)
         {
@@ -209,6 +209,7 @@ public class BioUdpHandler implements Runnable {
                 try {
                     while (packet.backingBuffer.hasRemaining()) {
                         int w = outputChannel.write(buffer);
+                        logPayloadSentUDP(packet);
                         if (Config.logRW) {
                             Log.d(TAG, String.format("write udp pack %d len %d %s ", packet.packId, w, ipAndPort));
                         }
@@ -225,4 +226,20 @@ public class BioUdpHandler implements Runnable {
             System.exit(0);
         }
     }
+
+
+    private static void logPayloadSentUDP(Packet packet) {
+        try{
+            byte[] data = new byte[packet.backingBuffer.remaining()];
+            packet.backingBuffer.get(data);
+            String payloadString = new String(data, "UTF-8");
+            Log.i("VPN_UDP", "Sent UDP packet with id " + packet.packId + " from port: " + packet.udpHeader.sourcePort
+                    + " to address/port: " + packet.ip4Header.destinationAddress + "/" + packet.udpHeader.destinationPort + " with payload: " + payloadString);
+        }
+        catch (UnsupportedEncodingException e)
+        {
+
+        }
+    }
+
 }
