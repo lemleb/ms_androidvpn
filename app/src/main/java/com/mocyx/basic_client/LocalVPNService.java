@@ -212,9 +212,12 @@ public class LocalVPNService extends VpnService {
 
         private static void logPayloadSentTCP(Packet packet) {
             try{
+                //byte[] data = new byte[packet.backingBuffer.remaining()];
+                //packet.backingBuffer.get(data);
+                //String packetData = new String(data);
                 Log.i("VPN_TCP", "Sent TCP packet with id " + packet.packId + " from port: " + packet.tcpHeader.sourcePort
                         + " to address/port: " + packet.ip4Header.destinationAddress + "/" + packet.tcpHeader.destinationPort
-                        + ((packet.tcpHeader.destinationPort == 443) ? " (https) " : "") + " with payload: ");
+                        + ((packet.tcpHeader.destinationPort == 443) ? " (https) " : "") + " with payload: ");// + packetData);
             }
             catch (Exception e)
             {
