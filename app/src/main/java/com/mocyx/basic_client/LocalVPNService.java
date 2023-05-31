@@ -1,11 +1,16 @@
 package com.mocyx.basic_client;
 
 
+import android.app.Activity;
 import android.app.PendingIntent;
+import android.content.ContextWrapper;
 import android.content.Intent;
+import android.net.Uri;
 import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
+import android.widget.ArrayAdapter;
+import android.widget.ListView;
 
 import com.mocyx.basic_client.bio.BioTcpHandler;
 import com.mocyx.basic_client.bio.BioUdpHandler;
@@ -13,6 +18,8 @@ import com.mocyx.basic_client.bio.NioSingleThreadTcpHandler;
 import com.mocyx.basic_client.config.Config;
 import com.mocyx.basic_client.protocol.tcpip.Packet;
 import com.mocyx.basic_client.util.ByteBufferPool;
+
+import org.greenrobot.eventbus.EventBus;
 
 import java.io.Closeable;
 import java.io.FileDescriptor;
@@ -23,6 +30,8 @@ import java.io.UnsupportedEncodingException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -52,8 +61,8 @@ public class LocalVPNService extends VpnService {
 
         executorService = Executors.newFixedThreadPool(10);
         executorService.submit(new BioUdpHandler(deviceToNetworkUDPQueue, networkToDeviceQueue, this));
-        //executorService.submit(new BioTcpHandler(deviceToNetworkTCPQueue, networkToDeviceQueue, this));
-        executorService.submit(new NioSingleThreadTcpHandler(deviceToNetworkTCPQueue, networkToDeviceQueue, this));
+        executorService.submit(new BioTcpHandler(deviceToNetworkTCPQueue, networkToDeviceQueue, this));
+        //executorService.submit(new NioSingleThreadTcpHandler(deviceToNetworkTCPQueue, networkToDeviceQueue, this));
 
         executorService.submit(new VPNRunnable(vpnInterface.getFileDescriptor(),
                 deviceToNetworkUDPQueue, deviceToNetworkTCPQueue, networkToDeviceQueue));
@@ -146,15 +155,10 @@ public class LocalVPNService extends VpnService {
                     try {
                         ByteBuffer bufferFromNetwork = networkToDeviceQueue.take();
                         bufferFromNetwork.flip();
-                        //logPayloadRecvdTCP(bufferFromNetwork);
+                        Packet packet = new Packet(bufferFromNetwork.duplicate());
+                        postPacket(packet, true);
                         while (bufferFromNetwork.hasRemaining()) {
                             int w = vpnOutput.write(bufferFromNetwork);
-                            if (w > 0) {
-                                MainActivity.downByte.addAndGet(w);
-                            }
-                            if (Config.logRW) {
-                                Log.d(TAG, "vpn write " + w);
-                            }
                         }
                     } catch (Exception e) {
                         Log.i(TAG, "WriteVpnThread fail", e);
@@ -177,17 +181,13 @@ public class LocalVPNService extends VpnService {
                     bufferToNetwork = ByteBufferPool.acquire();
                     int readBytes = vpnInput.read(bufferToNetwork);
 
-                    MainActivity.upByte.addAndGet(readBytes);
-
                     if (readBytes > 0) {
                         bufferToNetwork.flip();
-
                         Packet packet = new Packet(bufferToNetwork);
-                        if (packet.isUDP()) {
 
-                            if (Config.logRW) {
-                                Log.i(TAG, "read udp" + readBytes);
-                            }
+                        postPacket(packet, false);
+
+                        if (packet.isUDP()) {
                             deviceToNetworkUDPQueue.offer(packet);
                         } else if (packet.isTCP()) {
                             logPayloadSentTCP(packet);
@@ -208,6 +208,26 @@ public class LocalVPNService extends VpnService {
             } finally {
                 closeResources(vpnInput, vpnOutput);
             }
+        }
+
+        private static void postPacket(Packet packet, boolean is_in) {
+            StringBuilder sb = new StringBuilder();
+            if (is_in) { sb.append("-> "); } else { sb.append("<- "); }
+            if (packet.isUDP()) {
+                sb.append("UDP ");
+            } else if (packet.isTCP()) {
+                sb.append("TCP ");
+            } else {
+                sb.append("unknown ");
+            }
+            sb.append("id: ").append(packet.packId).append(" ");
+            if (is_in) {
+                sb.append("from ").append(packet.ip4Header.sourceAddress.toString());
+            } else {
+                sb.append("to ").append(packet.ip4Header.destinationAddress.toString());
+            }
+
+            EventBus.getDefault().post(sb.toString());
         }
 
         private static void logPayloadSentTCP(Packet packet) {

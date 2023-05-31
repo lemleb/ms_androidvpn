@@ -1,21 +1,38 @@
 package com.mocyx.basic_client;
 
+import android.content.Context;
 import android.content.Intent;
+import android.content.ServiceConnection;
+import android.content.pm.ApplicationInfo;
+import android.content.pm.PackageManager;
 import android.net.VpnService;
 import android.os.Bundle;
 
 import com.google.android.material.floatingactionbutton.FloatingActionButton;
 import com.google.android.material.snackbar.Snackbar;
 import com.mocyx.basic_client.bio.BioTcpHandler;
+import com.mocyx.basic_client.protocol.tcpip.Packet;
 
 import androidx.appcompat.app.AppCompatActivity;
 import androidx.appcompat.widget.Toolbar;
 
 import android.util.Log;
+import android.view.LayoutInflater;
 import android.view.View;
 import android.view.Menu;
 import android.view.MenuItem;
+import android.view.ViewGroup;
+import android.widget.ArrayAdapter;
+import android.widget.BaseAdapter;
+import android.widget.Button;
+import android.widget.LinearLayout;
+import android.widget.ListAdapter;
+import android.widget.ListView;
 import android.widget.TextView;
+
+import org.greenrobot.eventbus.EventBus;
+import org.greenrobot.eventbus.Subscribe;
+import org.greenrobot.eventbus.ThreadMode;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -28,60 +45,43 @@ import java.net.URL;
 import java.net.URLConnection;
 import java.nio.ByteBuffer;
 import java.nio.channels.DatagramChannel;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class MainActivity extends AppCompatActivity {
 
-
-    public static AtomicLong downByte = new AtomicLong(0);
-    public static AtomicLong upByte = new AtomicLong(0);
+    public ListView listView;
+    public ArrayAdapter<String> adapter;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = findViewById(R.id.toolbar);
+        adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
+        listView = findViewById(R.id.packets);
+        listView.setAdapter(adapter);
 
+        final PackageManager pm = getPackageManager();
+        List<ApplicationInfo> packages = pm.getInstalledApplications(PackageManager.GET_META_DATA);
+
+        for (ApplicationInfo packageInfo : packages) {
+            Log.d(TAG, "Installed package :" + packageInfo.packageName);
+            Log.d(TAG, "Source dir : " + packageInfo.sourceDir);
+        }
+
+        EventBus.getDefault().register(this);
 
         setSupportActionBar(toolbar);
 
-        FloatingActionButton fab = findViewById(R.id.fab);
-        fab.setOnClickListener(new View.OnClickListener() {
-            @Override
-            public void onClick(View view) {
-                Snackbar.make(view, "Replace with your own action", Snackbar.LENGTH_LONG)
-                        .setAction("Action", null).show();
-            }
-        });
-
-        TextView textView = findViewById(R.id.textView1);
-
-        Thread t = new Thread(new UpdateText(textView));
-        t.start();
+        startVpn();
     }
 
-    static class UpdateText implements Runnable {
-
-        TextView textView;
-
-        UpdateText(TextView textView) {
-            this.textView = textView;
-        }
-
-        @Override
-        public void run() {
-            while (true) {
-                try {
-                    Thread.sleep(100);
-                    textView.setText(String.format("up %dKB down %dKB", MainActivity.upByte.get() / 1024, MainActivity.downByte.get() / 1024));
-                } catch (InterruptedException e) {
-                    e.printStackTrace();
-                }
-
-            }
-
-        }
+    @Subscribe(threadMode = ThreadMode.MAIN)
+    public void onMessageEvent(String event) {
+        adapter.add(event);
     }
 
     private static final String TAG = BioTcpHandler.class.getSimpleName();
@@ -140,48 +140,8 @@ public class MainActivity extends AppCompatActivity {
 
     @Override
     protected void onDestroy() {
+        EventBus.getDefault().unregister(this);
         super.onDestroy();
-
-    }
-
-
-    public void clickHttp(View view) {
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    long ts = System.currentTimeMillis();
-                    //URL yahoo = new URL("https://www.google.com/");
-                    URL yahoo = new URL("https://www.baidu.com/");
-                    HttpURLConnection yc = (HttpURLConnection) yahoo.openConnection();
-
-                    yc.setRequestProperty("Connection", "close");
-                    yc.setConnectTimeout(30000);
-
-                    yc.setReadTimeout(30000);
-                    BufferedReader in = new BufferedReader(
-                            new InputStreamReader(yc.getInputStream()));
-                    String inputLine;
-                    while ((inputLine = in.readLine()) != null) {
-                        System.out.println(inputLine);
-                    }
-
-                    yc.disconnect();
-                    in.close();
-                    long te = System.currentTimeMillis();
-                    Log.i(TAG, String.format("http cost %d", te - ts));
-
-                    System.out.printf("http readline end\n");
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-        t.start();
-    }
-
-    public void clickStop(View view) {
-        //
     }
 
     public static void displayStuff(String whichHost, InetAddress inetAddress) {
@@ -190,28 +150,5 @@ public class MainActivity extends AppCompatActivity {
         System.out.println("Canonical Host Name:" + inetAddress.getCanonicalHostName());
         System.out.println("Host Name:" + inetAddress.getHostName());
         System.out.println("Host Address:" + inetAddress.getHostAddress());
-    }
-
-    public void clickDns(View view) {
-
-        Thread t = new Thread(new Runnable() {
-            @Override
-            public void run() {
-                try {
-                    long ts = System.currentTimeMillis();
-                    String host = "www.baidu.com";
-
-                    for (InetAddress inetAddress : InetAddress.getAllByName(host)) {
-                        displayStuff(host, inetAddress);
-                    }
-                    long te = System.currentTimeMillis();
-                    Log.i(TAG, String.format("dns cost %d", te - ts));
-
-                } catch (Exception e) {
-                    e.printStackTrace();
-                }
-            }
-        });
-        t.start();
     }
 }
