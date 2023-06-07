@@ -1,20 +1,14 @@
 package com.mocyx.basic_client;
 
 
-import android.app.Activity;
 import android.app.PendingIntent;
-import android.content.ContextWrapper;
 import android.content.Intent;
-import android.net.Uri;
 import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
 import android.util.Log;
-import android.widget.ArrayAdapter;
-import android.widget.ListView;
 
 import com.mocyx.basic_client.bio.BioTcpHandler;
 import com.mocyx.basic_client.bio.BioUdpHandler;
-import com.mocyx.basic_client.bio.NioSingleThreadTcpHandler;
 import com.mocyx.basic_client.config.Config;
 import com.mocyx.basic_client.protocol.tcpip.Packet;
 import com.mocyx.basic_client.util.ByteBufferPool;
@@ -26,12 +20,10 @@ import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
-import java.io.UnsupportedEncodingException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
-import java.nio.charset.StandardCharsets;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -190,7 +182,7 @@ public class LocalVPNService extends VpnService {
                         if (packet.isUDP()) {
                             deviceToNetworkUDPQueue.offer(packet);
                         } else if (packet.isTCP()) {
-                            logPayloadSentTCP(packet);
+                            //logPayloadSentTCP(packet);
                             deviceToNetworkTCPQueue.offer(packet);
                         } else {
                             Log.w(TAG, String.format("Unknown packet protocol type %d", packet.ip4Header.protocolNum));
@@ -210,10 +202,16 @@ public class LocalVPNService extends VpnService {
             }
         }
 
-        private static void postPacket(Packet packet, boolean is_in) {
+        private static void postPacket(Packet packet, boolean is_in) throws UnknownHostException {
             StringBuilder sb = new StringBuilder();
             if (is_in) { sb.append("-> "); } else { sb.append("<- "); }
-            if (packet.isUDP()) {
+            if(packet.isDNS()) {
+                sb.append("DNS ");
+            } else if(packet.isHTTPS()) {
+                sb.append("HTTPS ");
+            } else if(packet.isHTTP()) {
+                sb.append("HTTP ");
+            } else if (packet.isUDP()) {
                 sb.append("UDP ");
             } else if (packet.isTCP()) {
                 sb.append("TCP ");
@@ -223,8 +221,40 @@ public class LocalVPNService extends VpnService {
             sb.append("id: ").append(packet.packId).append(" ");
             if (is_in) {
                 sb.append("from ").append(packet.ip4Header.sourceAddress.toString());
+                //this should work for resolving the addresses but it does not (stalls the app)
+                //also we should consider doing it only for the http and https things
+
+                //InetAddress ia = InetAddress.getByName("1.1.1.1");
+                // packet.ip4Header.sourceAddress.toString().substring(1));
+                //sb.append("Host is: ");
+                //sb.append(ia.getHostName());
             } else {
                 sb.append("to ").append(packet.ip4Header.destinationAddress.toString());
+            }
+
+            if(packet.isDNS() && !is_in)
+            {
+                sb.append(" ");
+                if(packet.backingBuffer != null && packet.backingBuffer.remaining() > 0){
+
+
+                    try
+                    {
+                        ByteBuffer copiedBuffer = packet.backingBuffer.duplicate();
+                        byte[] data = new byte[copiedBuffer.remaining()];
+                        copiedBuffer.get(data);
+                        copiedBuffer.flip();
+                        String packetData = new String(data);
+                        packetData = packetData.replaceAll("[^a-zA-Z0-9]", "");
+                        sb.append(" Url in DNS: ");
+                        sb.append(packetData);
+                    }
+                    catch(Exception e)
+                    {
+                        Log.d("Problem", "This is the problem " + e);
+                    }
+
+                }
             }
 
             EventBus.getDefault().post(sb.toString());

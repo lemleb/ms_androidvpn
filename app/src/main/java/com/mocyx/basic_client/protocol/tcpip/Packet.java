@@ -26,6 +26,12 @@ public class Packet {
     public boolean isTCP;
     public boolean isUDP;
 
+    public boolean isDNS;
+
+    public boolean isHTTP;
+
+    public boolean isHTTPS;
+
     public Packet() {
 
     }
@@ -35,9 +41,24 @@ public class Packet {
         if (this.ip4Header.protocol == IP4Header.TransportProtocol.TCP) {
             this.tcpHeader = new TCPHeader(buffer);
             this.isTCP = true;
+            if(tcpHeader.destinationPort == 443 || tcpHeader.sourcePort == 443)
+            {
+                isHTTPS = true;
+            }
+
+            if(tcpHeader.destinationPort == 80 || tcpHeader.sourcePort == 80)
+            {
+                isHTTP = true;
+            }
+
         } else if (ip4Header.protocol == IP4Header.TransportProtocol.UDP) {
             this.udpHeader = new UDPHeader(buffer);
             this.isUDP = true;
+
+            if(udpHeader.destinationPort == 53 || udpHeader.sourcePort == 53)
+            {
+                isDNS = true;
+            }
         }
         this.backingBuffer = buffer;
     }
@@ -60,6 +81,16 @@ public class Packet {
     public boolean isUDP() {
         return isUDP;
     }
+
+    public boolean isDNS() {
+        return isDNS;
+    }
+
+    public boolean isHTTP() {
+        return isHTTP;
+    }
+
+    public boolean isHTTPS() {return isHTTPS;}
 
 
     public void updateTCPBuffer(ByteBuffer buffer, byte flags, long sequenceNum, long ackNum, int payloadSize) {
