@@ -55,6 +55,8 @@ public class MainActivity extends AppCompatActivity {
     public ListView listView;
     public ArrayAdapter<String> adapter;
 
+    private boolean autoScroll = true;
+
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -63,14 +65,6 @@ public class MainActivity extends AppCompatActivity {
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
         listView = findViewById(R.id.packets);
         listView.setAdapter(adapter);
-
-        final PackageManager pm = getPackageManager();
-        List<ApplicationInfo> packages = pm.getInstalledApplications(PackageManager.GET_META_DATA);
-
-        for (ApplicationInfo packageInfo : packages) {
-            Log.d(TAG, "Installed package :" + packageInfo.packageName);
-            Log.d(TAG, "Source dir : " + packageInfo.sourceDir);
-        }
 
         EventBus.getDefault().register(this);
 
@@ -82,6 +76,8 @@ public class MainActivity extends AppCompatActivity {
     @Subscribe(threadMode = ThreadMode.MAIN)
     public void onMessageEvent(String event) {
         adapter.add(event);
+        if (autoScroll)
+            listView.smoothScrollToPosition(adapter.getCount() - 1);
     }
 
     private static final String TAG = BioTcpHandler.class.getSimpleName();
@@ -101,8 +97,12 @@ public class MainActivity extends AppCompatActivity {
         int id = item.getItemId();
 
         //noinspection SimplifiableIfStatement
-        if (id == R.id.action_settings) {
+        if (id == R.id.action_clear) {
+            adapter.clear();
             return true;
+        } else if (id == R.id.action_autoscroll) {
+            autoScroll = !autoScroll;
+            listView.smoothScrollToPosition(adapter.getCount() - 1);
         }
 
         return super.onOptionsItemSelected(item);
@@ -128,14 +128,6 @@ public class MainActivity extends AppCompatActivity {
             startActivityForResult(vpnIntent, VPN_REQUEST_CODE);
         else
             onActivityResult(VPN_REQUEST_CODE, RESULT_OK, null);
-    }
-
-
-    public void clickSwitch(View view) {
-        System.out.println("hello");
-        this.startVpn();
-
-
     }
 
     @Override

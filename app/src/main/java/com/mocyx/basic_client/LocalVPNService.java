@@ -1,10 +1,20 @@
 package com.mocyx.basic_client;
 
 
+import static android.os.Process.INVALID_UID;
+import static android.system.OsConstants.IPPROTO_TCP;
+
 import android.app.PendingIntent;
+import android.app.usage.NetworkStats;
+import android.app.usage.NetworkStatsManager;
+import android.content.Context;
 import android.content.Intent;
+import android.content.pm.PackageManager;
+import android.net.ConnectivityManager;
 import android.net.VpnService;
 import android.os.ParcelFileDescriptor;
+import android.os.RemoteException;
+import android.telephony.TelephonyManager;
 import android.util.Log;
 
 import com.mocyx.basic_client.bio.BioTcpHandler;
@@ -15,15 +25,21 @@ import com.mocyx.basic_client.util.ByteBufferPool;
 
 import org.greenrobot.eventbus.EventBus;
 
+import java.io.BufferedReader;
 import java.io.Closeable;
 import java.io.FileDescriptor;
 import java.io.FileInputStream;
 import java.io.FileOutputStream;
 import java.io.IOException;
+import java.io.InputStreamReader;
 import java.net.InetAddress;
+import java.net.InetSocketAddress;
 import java.net.UnknownHostException;
 import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
+import java.util.Arrays;
+import java.util.HashMap;
+import java.util.Objects;
 import java.util.concurrent.ArrayBlockingQueue;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ExecutorService;
@@ -42,6 +58,8 @@ public class LocalVPNService extends VpnService {
     private BlockingQueue<Packet> deviceToNetworkTCPQueue;
     private BlockingQueue<ByteBuffer> networkToDeviceQueue;
     private ExecutorService executorService;
+    private static ConnectivityManager connectivityManager;
+    private static PackageManager packageManager;
 
     @Override
     public void onCreate() {
@@ -55,6 +73,9 @@ public class LocalVPNService extends VpnService {
         executorService.submit(new BioUdpHandler(deviceToNetworkUDPQueue, networkToDeviceQueue, this));
         executorService.submit(new BioTcpHandler(deviceToNetworkTCPQueue, networkToDeviceQueue, this));
         //executorService.submit(new NioSingleThreadTcpHandler(deviceToNetworkTCPQueue, networkToDeviceQueue, this));
+
+        connectivityManager = (ConnectivityManager) getSystemService(Context.CONNECTIVITY_SERVICE);
+        packageManager = getPackageManager();
 
         executorService.submit(new VPNRunnable(vpnInterface.getFileDescriptor(),
                 deviceToNetworkUDPQueue, deviceToNetworkTCPQueue, networkToDeviceQueue));
@@ -203,8 +224,10 @@ public class LocalVPNService extends VpnService {
         }
 
         private static void postPacket(Packet packet, boolean is_in) throws UnknownHostException {
-            StringBuilder sb = new StringBuilder();
-            if (is_in) { sb.append("-> "); } else { sb.append("<- "); }
+            StringBuilder sb = new StringBuilder("PACKET: \n");
+            sb.append("package: ").append(getPackageName(packet, is_in)).append("\n");
+            sb.append("dir: ").append(is_in ? "n2d" : "d2n").append("\n");
+            sb.append("protocol: ");
             if(packet.isDNS()) {
                 sb.append("DNS ");
             } else if(packet.isHTTPS()) {
@@ -218,46 +241,73 @@ public class LocalVPNService extends VpnService {
             } else {
                 sb.append("unknown ");
             }
-            sb.append("id: ").append(packet.packId).append(" ");
-            if (is_in) {
-                sb.append("from ").append(packet.ip4Header.sourceAddress.toString());
-                //this should work for resolving the addresses but it does not (stalls the app)
-                //also we should consider doing it only for the http and https things
+            sb.append("\n");
+            sb.append("id: ").append(packet.packId).append("\n");
+            sb.append("source: ").append(packet.ip4Header.sourceAddress.toString()).append("\n");
+            sb.append("destination: ").append(packet.ip4Header.destinationAddress);
 
-                //InetAddress ia = InetAddress.getByName("1.1.1.1");
-                // packet.ip4Header.sourceAddress.toString().substring(1));
-                //sb.append("Host is: ");
-                //sb.append(ia.getHostName());
-            } else {
-                sb.append("to ").append(packet.ip4Header.destinationAddress.toString());
-            }
-
-            if(packet.isDNS() && !is_in)
-            {
-                sb.append(" ");
-                if(packet.backingBuffer != null && packet.backingBuffer.remaining() > 0){
-
-
-                    try
-                    {
+            if(packet.isDNS() && !is_in) {
+                if(packet.backingBuffer != null && packet.backingBuffer.remaining() > 0) {
+                    try {
                         ByteBuffer copiedBuffer = packet.backingBuffer.duplicate();
                         byte[] data = new byte[copiedBuffer.remaining()];
                         copiedBuffer.get(data);
                         copiedBuffer.flip();
                         String packetData = new String(data);
                         packetData = packetData.replaceAll("[^a-zA-Z0-9]", "");
-                        sb.append(" Url in DNS: ");
-                        sb.append(packetData);
-                    }
-                    catch(Exception e)
-                    {
+                        sb.append("\n").append("DNS payload url: ").append(packetData);
+                    } catch(Exception e) {
                         Log.d("Problem", "This is the problem " + e);
                     }
+                }
+            }
 
+            if(packet.isHTTP) {
+                if(packet.backingBuffer != null && packet.backingBuffer.remaining() > 0) {
+                    ByteBuffer copiedBuffer = packet.backingBuffer.duplicate();
+                    byte[] data = new byte[copiedBuffer.remaining()];
+                    copiedBuffer.get(data);
+                    copiedBuffer.flip();
+                    String packetData = new String(data);
+                    sb.append("\n").append("HTTP payload: ").append(packetData);
                 }
             }
 
             EventBus.getDefault().post(sb.toString());
+        }
+
+        private static String getPackageName(Packet packet, boolean is_in) {
+            InetSocketAddress remoteInetSocketAddress = null;
+            InetSocketAddress localInetSocketAddress = null;
+
+            if (packet.isTCP) {
+                remoteInetSocketAddress = new InetSocketAddress(packet.ip4Header.destinationAddress, packet.tcpHeader.destinationPort);
+                localInetSocketAddress = new InetSocketAddress(packet.ip4Header.sourceAddress, packet.tcpHeader.sourcePort);
+            } else if (packet.isUDP) {
+                remoteInetSocketAddress = new InetSocketAddress(packet.ip4Header.destinationAddress, packet.udpHeader.destinationPort);
+                localInetSocketAddress = new InetSocketAddress(packet.ip4Header.sourceAddress, packet.udpHeader.sourcePort);
+            }
+
+            int uid = INVALID_UID;
+            if (packet.isUDP || packet.isTCP) {
+                if (is_in)
+                    uid = connectivityManager.getConnectionOwnerUid(IPPROTO_TCP, remoteInetSocketAddress, localInetSocketAddress);
+                else
+                    uid = connectivityManager.getConnectionOwnerUid(IPPROTO_TCP, localInetSocketAddress, remoteInetSocketAddress);
+            }
+
+            Log.i(TAG, "UID: " + uid);
+
+            String[] packages = packageManager.getPackagesForUid(uid);
+
+            String name;
+            if (packages != null && packages.length >= 1) {
+                name = packages[0];
+            } else {
+                name = "unknown";
+            }
+            Log.i(TAG, name);
+            return name;
         }
 
         private static void logPayloadSentTCP(Packet packet) {
