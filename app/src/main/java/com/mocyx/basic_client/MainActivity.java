@@ -53,8 +53,9 @@ import java.util.concurrent.atomic.AtomicLong;
 public class MainActivity extends AppCompatActivity {
 
     public ListView listView;
+    private TextView[] numViews;
+    private int[] nums = {0, 0, 0, 0, 0, 0};
     public ArrayAdapter<String> adapter;
-
     private boolean autoScroll = true;
 
     @Override
@@ -62,6 +63,13 @@ public class MainActivity extends AppCompatActivity {
         super.onCreate(savedInstanceState);
         setContentView(R.layout.activity_main);
         Toolbar toolbar = findViewById(R.id.toolbar);
+        numViews = new TextView[]{
+                findViewById(R.id.num_total),
+                findViewById(R.id.num_tcp),
+                findViewById(R.id.num_udp),
+                findViewById(R.id.num_https),
+                findViewById(R.id.num_http),
+                findViewById(R.id.num_unknown)};
         adapter = new ArrayAdapter<>(this, android.R.layout.simple_list_item_1);
         listView = findViewById(R.id.packets);
         listView.setAdapter(adapter);
@@ -74,10 +82,40 @@ public class MainActivity extends AppCompatActivity {
     }
 
     @Subscribe(threadMode = ThreadMode.MAIN)
-    public void onMessageEvent(String event) {
-        adapter.add(event);
+    public void onMessageEvent(MessageEvent event) {
+        adapter.add(event.text);
         if (autoScroll)
             listView.smoothScrollToPosition(adapter.getCount() - 1);
+
+        Packet packet = event.packet;
+
+        nums[0]++;
+        numViews[0].setText("total = " + nums[0]);
+
+        if (packet.isTCP) {
+            nums[1]++;
+            numViews[1].setText("tcp = " + nums[1]);
+            if (packet.isHTTPS) {
+                nums[3]++;
+                numViews[3].setText("https = " + nums[3]);
+            } else if (packet.isHTTP) {
+                nums[4]++;
+                numViews[4].setText("http = " + nums[4]);
+            }
+        } else if (packet.isUDP) {
+            nums[2]++;
+            numViews[2].setText("udp = " + nums[2]);
+            if (packet.isHTTPS) {
+                nums[3]++;
+                numViews[3].setText("https = " + nums[3]);
+            } else if (packet.isHTTP) {
+                nums[4]++;
+                numViews[4].setText("http = " + nums[4]);
+            }
+        } else {
+            nums[5]++;
+            numViews[5].setText("unknown = " + nums[5]);
+        }
     }
 
     private static final String TAG = BioTcpHandler.class.getSimpleName();

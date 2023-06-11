@@ -273,7 +273,7 @@ public class LocalVPNService extends VpnService {
                 }
             }
 
-            EventBus.getDefault().post(sb.toString());
+            EventBus.getDefault().post(new MessageEvent(packet, sb.toString(), is_in));
         }
 
         private static String getPackageName(Packet packet, boolean is_in) {
